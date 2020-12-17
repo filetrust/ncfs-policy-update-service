@@ -1,16 +1,21 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/dgrijalva/jwt-go"
 	policy "github.com/filetrust/policy-update-service/pkg"
+	"github.com/golang/gddo/httputil/header"
 	"github.com/gorilla/mux"
 	"github.com/shaj13/go-guardian/auth"
 	"github.com/shaj13/go-guardian/auth/strategies/basic"
@@ -30,22 +35,90 @@ var (
 	cache         store.Cache
 )
 
+type Policy struct {
+	UnprocessableFileTypeAction *int
+	GlasswallBlockedFilesAction *int
+}
+
 func updatePolicy(w http.ResponseWriter, r *http.Request) {
-	body, err := ioutil.ReadAll(r.Body)
+	if r.Header.Get("Content-Type") != "" {
+		value, _ := header.ParseValueAndParams(r.Header, "Content-Type")
+		if value != "application/json" {
+			msg := "Content-Type header is not application/json"
+			http.Error(w, msg, http.StatusUnsupportedMediaType)
+			return
+		}
+	}
+
+	// enforce body size limit
+	r.Body = http.MaxBytesReader(w, r.Body, 1048576)
+
+	dec := json.NewDecoder(r.Body)
+
+	// enforce body properties
+	dec.DisallowUnknownFields()
+
+	var p Policy
+	err := dec.Decode(&p)
 	if err != nil {
-		log.Printf("Unable to read request body: %v", err)
-		http.Error(w, "Unable to read request body.", http.StatusBadRequest)
+
+		var syntaxError *json.SyntaxError
+		var unmarshalTypeError *json.UnmarshalTypeError
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		switch {
+		case errors.As(err, &syntaxError):
+			msg := fmt.Sprintf("Request body contains badly-formed JSON (at position %d)", syntaxError.Offset)
+			http.Error(w, msg, http.StatusBadRequest)
+		case errors.Is(err, io.ErrUnexpectedEOF):
+			msg := fmt.Sprintf("Request body contains badly-formed JSON")
+			http.Error(w, msg, http.StatusBadRequest)
+		case errors.As(err, &unmarshalTypeError):
+			msg := fmt.Sprintf("Request body contains an invalid value for the %q field (at position %d)", unmarshalTypeError.Field, unmarshalTypeError.Offset)
+			http.Error(w, msg, http.StatusBadRequest)
+		case strings.HasPrefix(err.Error(), "json: unknown field "):
+			fieldName := strings.TrimPrefix(err.Error(), "json: unknown field ")
+			msg := fmt.Sprintf("Request body contains unknown field %s", fieldName)
+			http.Error(w, msg, http.StatusBadRequest)
+		case errors.Is(err, io.EOF):
+			msg := "Request body must not be empty"
+			http.Error(w, msg, http.StatusBadRequest)
+		case err.Error() == "http: request body too large":
+			msg := "Request body must not be larger than 1MB"
+			http.Error(w, msg, http.StatusRequestEntityTooLarge)
+		default:
+			log.Println(err.Error())
+			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		}
 		return
 	}
 
-	if len(body) == 0 {
-		log.Printf("Expected request body, but was nil")
-		http.Error(w, "Request body must not be empty.", http.StatusBadRequest)
+	if p.UnprocessableFileTypeAction == nil {
+		http.Error(w, "UnprocessableFileTypeAction is required.", http.StatusBadRequest)
 		return
 	}
+
+	if *p.UnprocessableFileTypeAction <= 0 || *p.UnprocessableFileTypeAction >= 5 {
+		http.Error(w, "UnprocessableFileTypeAction must be between 1-4 inclusive.", http.StatusBadRequest)
+		return
+	}
+
+	if p.GlasswallBlockedFilesAction == nil {
+		http.Error(w, "GlasswallBlockedFilesAction is required.", http.StatusBadRequest)
+		return
+	}
+
+	if *p.GlasswallBlockedFilesAction <= 0 || *p.GlasswallBlockedFilesAction >= 5 {
+		http.Error(w, "GlasswallBlockedFilesAction  must be between 1-4 inclusive.", http.StatusBadRequest)
+		return
+	}
+
+	b := bytes.Buffer{}
+	enc := json.NewEncoder(&b)
+	enc.Encode(p)
+	str := string(b.Bytes())
 
 	args := policy.PolicyArgs{
-		Policy:        string(body),
+		Policy:        str,
 		Namespace:     namespace,
 		ConfigMapName: configmapName,
 	}
