@@ -1,5 +1,5 @@
 {
-  "name": "glasswall-transaction-event-api",
+  "name": "glasswall-ncfs-policy-update-service",
   "version": "0.1.0",
   "private": true,
   "dependencies": {
@@ -32,7 +32,7 @@
     "swagger-ui-react": "^3.25.0",
     "typescript": "^3.7.5"
   },
-  "homepage": "http://filetrust.github.io/transaction-event-api",
+  "homepage": "http://filetrust.github.io/ncfs-policy-update-service",
   "scripts": {
     "start": "npm-run-all -p start:react start:scss",
     "start:react": "react-scripts start",
