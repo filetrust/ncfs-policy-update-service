@@ -1,0 +1,28 @@
+{
+  "files": {
+    "main.css": "/ncfs-policy-update-service/static/css/main.909e1c7e.chunk.css",
+    "main.js": "/ncfs-policy-update-service/static/js/main.e4af2595.chunk.js",
+    "main.js.map": "/ncfs-policy-update-service/static/js/main.e4af2595.chunk.js.map",
+    "runtime-main.js": "/ncfs-policy-update-service/static/js/runtime-main.3cdb0098.js",
+    "runtime-main.js.map": "/ncfs-policy-update-service/static/js/runtime-main.3cdb0098.js.map",
+    "static/css/2.ecb7c289.chunk.css": "/ncfs-policy-update-service/static/css/2.ecb7c289.chunk.css",
+    "static/js/2.8a8861ed.chunk.js": "/ncfs-policy-update-service/static/js/2.8a8861ed.chunk.js",
+    "static/js/2.8a8861ed.chunk.js.map": "/ncfs-policy-update-service/static/js/2.8a8861ed.chunk.js.map",
+    "index.html": "/ncfs-policy-update-service/index.html",
+    "precache-manifest.c20bebe9a393cecf2b4238b285758510.js": "/ncfs-policy-update-service/precache-manifest.c20bebe9a393cecf2b4238b285758510.js",
+    "service-worker.js": "/ncfs-policy-update-service/service-worker.js",
+    "static/css/2.ecb7c289.chunk.css.map": "/ncfs-policy-update-service/static/css/2.ecb7c289.chunk.css.map",
+    "static/css/main.909e1c7e.chunk.css.map": "/ncfs-policy-update-service/static/css/main.909e1c7e.chunk.css.map",
+    "static/js/2.8a8861ed.chunk.js.LICENSE.txt": "/ncfs-policy-update-service/static/js/2.8a8861ed.chunk.js.LICENSE.txt",
+    "static/media/api.yaml": "/ncfs-policy-update-service/static/media/api.365eab29.yaml",
+    "static/media/App.css": "/ncfs-policy-update-service/static/media/roboto-regular-webfont.d96d07c1.woff2",
+    "static/media/logo.svg": "/ncfs-policy-update-service/static/media/logo.6c8e5727.svg"
+  },
+  "entrypoints": [
+    "static/js/runtime-main.3cdb0098.js",
+    "static/css/2.ecb7c289.chunk.css",
+    "static/js/2.8a8861ed.chunk.js",
+    "static/css/main.909e1c7e.chunk.css",
+    "static/js/main.e4af2595.chunk.js"
+  ]
+}
