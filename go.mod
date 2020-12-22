@@ -4,6 +4,7 @@ go 1.15
 
 require (
 	github.com/dgrijalva/jwt-go v3.2.0+incompatible
+	github.com/golang/gddo v0.0.0-20201215222538-41221c318e83
 	github.com/google/uuid v1.1.2
 	github.com/gorilla/mux v1.8.0
 	github.com/matryer/try v0.0.0-20161228173917-9ac251b645a2

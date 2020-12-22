@@ -1,0 +1,66 @@
+openapi: 3.0.0
+info:
+  title: Glasswall Transaction Event Store API
+  description: These are HTTP endpoints that query the transaction store
+  version: 0.1.9
+servers:
+  - url: http://localhost:10001
+    description: Local Debug (Non-Https)
+  - url: https://localhost:10001
+    description: Kube Forward 10001
+components:
+  securitySchemes:
+    basicAuth:     # <-- arbitrary name for the security scheme
+      type: http
+      scheme: basic   
+    bearerAuth:            # arbitrary name for the security scheme
+      type: http
+      scheme: bearer
+      bearerFormat: JWT    
+paths:
+  /api/v1/auth/token:
+    get:
+      security:
+        - basicAuth: []
+      summary: Gets a JWT Bearer Token for use in subsequent requests
+      description: This endpoint accepts username and password to generate a JWT bearer token
+      responses:
+        200:    # status code
+          description: OK - The Token was retrieved successfully
+        401:
+          description: Unauthorized - The supplied username or password was not correct
+  /api/v1/policy:
+    put:
+      security:
+        - bearerAuth: []
+      summary: Gets a JWT Bearer Token for use in subsequent requests
+      description: This endpoint accepts username and password to generate a JWT bearer token
+      requestBody:
+        content:
+          "application/json":
+            schema:
+              type: object
+              properties:
+                UnprocessableFileTypeAction: 
+                  description: The decision the reference API should take in the event an uploaded file cannot be rebuilt by the Glasswall d-First engine due to being an unsupported file type. | 
+                    These options are used when a processed file type is unknown<br/><br/>
+                    1 - Relay - The Reference API should not specify a replacement base64 and will set 'ncfs-decision' header to 'Relay'<br/><br/>
+                    2 - Block - The Reference API should not specify a replacement base64 and will set 'ncfs-decision' header to 'Block'<br/><br/>
+                    4 - Replace - The reference API should specify a replacement base64 string and will set 'ncfs-decision' header to 'Replace'. The Base64 body replacement string will be a copy of the input Base64 Body.<br/><br/>
+                    See Reference NCFS API Swagger Page for more infomation
+                  example: 1
+                  type: number
+                GlasswallBlockedFilesAction: 
+                  type: number
+                  example: 1
+                  description: The decision the reference API should take in the event an uploaded file cannot be rebuilt by the Glasswall d-First engine due to an issue. |
+                    These options are used when a processed file type is unknown<br/><br/>
+                    1 - Relay - The Reference API should not specify a replacement base64 and will set 'ncfs-decision' header to 'Relay'<br/><br/>
+                    2 - Block - The Reference API should not specify a replacement base64 and will set 'ncfs-decision' header to 'Block'<br/><br/>
+                    4 - Replace - The reference API should specify a replacement base64 string and will set 'ncfs-decision' header to 'Replace'. The Base64 body replacement string will be a copy of the input Base64 Body.<br/><br/>
+                    See Reference NCFS API Swagger Page for more infomation
+      responses:
+        200:    # status code
+          description: OK - The Token was retrieved successfully
+        401:
+          description: Unauthorized - The supplied username or password was not correct

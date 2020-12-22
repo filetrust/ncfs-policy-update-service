@@ -41,6 +41,15 @@ type Policy struct {
 }
 
 func updatePolicy(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Methods", "*")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Headers", "*")
+	w.Header().Set("Access-Control-Expose-Headers", "*")
+	
+	if r.Method == "OPTIONS" {
+		return
+	}
+
 	if r.Header.Get("Content-Type") != "" {
 		value, _ := header.ParseValueAndParams(r.Header, "Content-Type")
 		if value != "application/json" {
@@ -141,6 +150,15 @@ func updatePolicy(w http.ResponseWriter, r *http.Request) {
 }
 
 func createToken(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Methods", "*")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Headers", "*")
+	w.Header().Set("Access-Control-Expose-Headers", "*")
+	
+	if r.Method == "OPTIONS" {
+		return
+	}
+
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"iss": "auth-app",
 		"sub": username,
@@ -180,6 +198,14 @@ func verifyToken(ctx context.Context, r *http.Request, tokenString string) (auth
 }
 
 func authMiddleware(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
+	w.Header().Set("Access-Control-Allow-Methods", "*")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Headers", "*")
+	w.Header().Set("Access-Control-Expose-Headers", "*")
+	
+	if r.Method == "OPTIONS" {
+		return
+	}
 	log.Println("Executing Auth Middleware")
 	user, err := authenticator.Authenticate(r)
 	if err != nil {
@@ -211,8 +237,8 @@ func main() {
 
 	setupGoGuardian()
 	router := mux.NewRouter()
-	router.HandleFunc("/api/v1/auth/token", createToken).Methods("GET")
-	router.HandleFunc("/api/v1/policy", updatePolicy).Methods("PUT")
+	router.HandleFunc("/api/v1/auth/token", createToken).Methods("GET", "OPTIONS")
+	router.HandleFunc("/api/v1/policy", updatePolicy).Methods("PUT", "OPTIONS")
 
 	n := negroni.New()
 	n.Use(negroni.NewRecovery())
