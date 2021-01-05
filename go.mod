@@ -8,6 +8,7 @@ require (
 	github.com/google/uuid v1.1.2
 	github.com/gorilla/mux v1.8.0
 	github.com/matryer/try v0.0.0-20161228173917-9ac251b645a2
+	github.com/prometheus/client_golang v1.9.0
 	github.com/shaj13/go-guardian v1.5.11
 	github.com/urfave/negroni v1.0.0
 	golang.org/x/time v0.0.0-20200630173020-3af7569d3a1e // indirect
