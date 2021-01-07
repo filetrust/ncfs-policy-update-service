@@ -10,81 +10,29 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/dgrijalva/jwt-go"
 	policy "github.com/filetrust/policy-update-service/pkg"
 	"github.com/golang/gddo/httputil/header"
 	"github.com/gorilla/mux"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/shaj13/go-guardian/auth"
 	"github.com/shaj13/go-guardian/auth/strategies/basic"
 	"github.com/shaj13/go-guardian/auth/strategies/bearer"
 	"github.com/shaj13/go-guardian/store"
+	metrics "github.com/slok/go-http-metrics/metrics/prometheus"
+	"github.com/slok/go-http-metrics/middleware"
+	negronimiddleware "github.com/slok/go-http-metrics/middleware/negroni"
 	"github.com/urfave/negroni"
 )
 
-const (
-	ok           = "ok"
-	usererr      = "user_error"
-	jwterr       = "jwt_error"
-	jsonerr      = "json_error"
-	k8sclient    = "k8s_client_error"
-	configmaperr = "configmap_error"
-)
-
 var (
-	tokenProcTime = promauto.NewHistogram(
-		prometheus.HistogramOpts{
-			Name:    "gw_ncfspolicyupdate_tokenrequest_processing_time_millisecond",
-			Help:    "Time taken to process token creation request",
-			Buckets: []float64{5, 10, 100, 250, 500, 1000},
-		},
-	)
-
-	tokenReqTotal = promauto.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "gw_ncfspolicyupdate_tokenrequest_received_total",
-			Help: "Number of token creation requests received",
-		},
-		[]string{"status"},
-	)
-
-	policyUpdateProcTime = promauto.NewHistogram(
-		prometheus.HistogramOpts{
-			Name:    "gw_ncfspolicyupdate_updaterequest_processing_time_millisecond",
-			Help:    "Time taken to process policy update request",
-			Buckets: []float64{5, 10, 100, 250, 500, 1000},
-		},
-	)
-
-	policyUpdateReqTotal = promauto.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "gw_ncfspolicyupdate_updaterequest_received_total",
-			Help: "Number of policy update requests received",
-		},
-		[]string{"status"},
-	)
-
-	authProcTime = promauto.NewHistogram(
-		prometheus.HistogramOpts{
-			Name:    "gw_ncfspolicyupdate_authenticate_processing_time_millisecond",
-			Help:    "Time taken to authenticate the request",
-			Buckets: []float64{5, 10, 100, 250, 500, 1000},
-		},
-	)
-
-	authReqTotal = promauto.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "gw_ncfspolicyupdate_authenticate_received_total",
-			Help: "Number of authenticatations received",
-		},
-		[]string{"status"},
-	)
-
 	listeningPort = os.Getenv("LISTENING_PORT")
+	metricsPort   = os.Getenv("METRICS_PORT")
 	namespace     = os.Getenv("NAMESPACE")
 	configmapName = os.Getenv("CONFIGMAP_NAME")
 	username      = os.Getenv("USERNAME")
@@ -100,10 +48,6 @@ type Policy struct {
 }
 
 func updatePolicy(w http.ResponseWriter, r *http.Request) {
-	defer func(start time.Time) {
-		policyUpdateProcTime.Observe(float64(time.Since(start).Milliseconds()))
-	}(time.Now())
-
 	w.Header().Set("Access-Control-Allow-Methods", "*")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Headers", "*")
@@ -116,7 +60,6 @@ func updatePolicy(w http.ResponseWriter, r *http.Request) {
 	if r.Header.Get("Content-Type") != "" {
 		value, _ := header.ParseValueAndParams(r.Header, "Content-Type")
 		if value != "application/json" {
-			policyUpdateReqTotal.WithLabelValues(jsonerr).Inc()
 			msg := "Content-Type header is not application/json"
 			http.Error(w, msg, http.StatusUnsupportedMediaType)
 			return
@@ -134,7 +77,6 @@ func updatePolicy(w http.ResponseWriter, r *http.Request) {
 	var p Policy
 	err := dec.Decode(&p)
 	if err != nil {
-		policyUpdateReqTotal.WithLabelValues(jsonerr).Inc()
 		var syntaxError *json.SyntaxError
 		var unmarshalTypeError *json.UnmarshalTypeError
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -166,25 +108,21 @@ func updatePolicy(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if p.UnprocessableFileTypeAction == nil {
-		policyUpdateReqTotal.WithLabelValues(jsonerr).Inc()
 		http.Error(w, "UnprocessableFileTypeAction is required.", http.StatusBadRequest)
 		return
 	}
 
 	if *p.UnprocessableFileTypeAction <= 0 || *p.UnprocessableFileTypeAction >= 5 {
-		policyUpdateReqTotal.WithLabelValues(jsonerr).Inc()
 		http.Error(w, "UnprocessableFileTypeAction must be between 1-4 inclusive.", http.StatusBadRequest)
 		return
 	}
 
 	if p.GlasswallBlockedFilesAction == nil {
-		policyUpdateReqTotal.WithLabelValues(jsonerr).Inc()
 		http.Error(w, "GlasswallBlockedFilesAction is required.", http.StatusBadRequest)
 		return
 	}
 
 	if *p.GlasswallBlockedFilesAction <= 0 || *p.GlasswallBlockedFilesAction >= 5 {
-		policyUpdateReqTotal.WithLabelValues(jsonerr).Inc()
 		http.Error(w, "GlasswallBlockedFilesAction  must be between 1-4 inclusive.", http.StatusBadRequest)
 		return
 	}
@@ -202,7 +140,6 @@ func updatePolicy(w http.ResponseWriter, r *http.Request) {
 
 	err = args.GetClient()
 	if err != nil {
-		policyUpdateReqTotal.WithLabelValues(k8sclient).Inc()
 		log.Printf("Unable to get client: %v", err)
 		http.Error(w, "Something went wrong getting K8 Client.", http.StatusInternalServerError)
 		return
@@ -210,21 +147,15 @@ func updatePolicy(w http.ResponseWriter, r *http.Request) {
 
 	err = args.UpdatePolicy()
 	if err != nil {
-		policyUpdateReqTotal.WithLabelValues(configmaperr).Inc()
 		log.Printf("Unable to update policy: %v", err)
 		http.Error(w, "Something went wrong when updating the config map.", http.StatusInternalServerError)
 		return
 	}
 
 	w.Write([]byte("Successfully updated config map."))
-	policyUpdateReqTotal.WithLabelValues(ok).Inc()
 }
 
 func createToken(w http.ResponseWriter, r *http.Request) {
-	defer func(start time.Time) {
-		tokenProcTime.Observe(float64(time.Since(start).Milliseconds()))
-	}(time.Now())
-
 	w.Header().Set("Access-Control-Allow-Methods", "*")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Headers", "*")
@@ -242,7 +173,6 @@ func createToken(w http.ResponseWriter, r *http.Request) {
 	})
 	jwtToken, _ := token.SignedString([]byte("secret"))
 	w.Write([]byte(jwtToken))
-	tokenReqTotal.WithLabelValues(ok).Inc()
 }
 
 func validateUser(ctx context.Context, r *http.Request, usr, pass string) (auth.Info, error) {
@@ -250,21 +180,18 @@ func validateUser(ctx context.Context, r *http.Request, usr, pass string) (auth.
 		return auth.NewDefaultUser(usr, "1", nil, nil), nil
 	}
 
-	authReqTotal.WithLabelValues(usererr).Inc()
 	return nil, fmt.Errorf("Invalid credentials")
 }
 
 func verifyToken(ctx context.Context, r *http.Request, tokenString string) (auth.Info, error) {
 	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-			authReqTotal.WithLabelValues(jwterr).Inc()
 			return nil, fmt.Errorf("Unexpected signing method: %v", token.Header["alg"])
 		}
 		return []byte("secret"), nil
 	})
 
 	if err != nil {
-		authReqTotal.WithLabelValues(jwterr).Inc()
 		return nil, err
 	}
 
@@ -273,15 +200,10 @@ func verifyToken(ctx context.Context, r *http.Request, tokenString string) (auth
 		return user, nil
 	}
 
-	authReqTotal.WithLabelValues(jwterr).Inc()
 	return nil, fmt.Errorf("Invalid token")
 }
 
 func authMiddleware(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
-	defer func(start time.Time) {
-		authProcTime.Observe(float64(time.Since(start).Milliseconds()))
-	}(time.Now())
-
 	w.Header().Set("Access-Control-Allow-Methods", "*")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Headers", "*")
@@ -298,7 +220,6 @@ func authMiddleware(w http.ResponseWriter, r *http.Request, next http.HandlerFun
 		return
 	}
 
-	authReqTotal.WithLabelValues(ok).Inc()
 	log.Printf("User %s Authenticated\n", user.UserName())
 	next.ServeHTTP(w, r)
 }
@@ -315,11 +236,16 @@ func setupGoGuardian() {
 }
 
 func main() {
-	if listeningPort == "" || namespace == "" || configmapName == "" || username == "" || password == "" {
-		log.Fatalf("init failed: LISTENTING_PORT, NAMESPACE, CONFIGMAP_NAME, USERNAME or PASSWORD environment variables not set")
+	if listeningPort == "" || metricsPort == "" || namespace == "" || configmapName == "" || username == "" || password == "" {
+		log.Fatalf("init failed: LISTENTING_PORT, METRICS_PORT, NAMESPACE, CONFIGMAP_NAME, USERNAME or PASSWORD environment variables not set")
 	}
 
 	log.Printf("Listening on port with TLS :%v", listeningPort)
+
+	mdlw := middleware.New(middleware.Config{
+		Recorder: metrics.NewRecorder(metrics.Config{}),
+		Service:  "ncfs-policy-update-service",
+	})
 
 	setupGoGuardian()
 	router := mux.NewRouter()
@@ -329,8 +255,26 @@ func main() {
 	n := negroni.New()
 	n.Use(negroni.NewRecovery())
 	n.Use(negroni.NewLogger())
+	n.Use(negronimiddleware.Handler("", mdlw))
 	n.Use(negroni.HandlerFunc(authMiddleware))
 	n.UseHandler(router)
 
-	log.Fatal(http.ListenAndServeTLS(fmt.Sprintf(":%v", listeningPort), "/etc/ssl/certs/server.crt", "/etc/ssl/private/server.key", n))
+	go func() {
+		log.Printf("server listening at %v", listeningPort)
+		if err := http.ListenAndServeTLS(fmt.Sprintf(":%v", listeningPort), "/etc/ssl/certs/server.crt", "/etc/ssl/private/server.key", n); err != nil {
+			log.Fatalf("error while serving: %s", err)
+		}
+	}()
+
+	go func() {
+		log.Printf("server listening at %v", metricsPort)
+		if err := http.ListenAndServe(fmt.Sprintf(":%v", metricsPort), promhttp.Handler()); err != nil {
+			log.Fatalf("error while serving: %s", err)
+		}
+	}()
+
+	// Wait until some signal is captured.
+	sigC := make(chan os.Signal, 1)
+	signal.Notify(sigC, syscall.SIGTERM, syscall.SIGINT)
+	<-sigC
 }
